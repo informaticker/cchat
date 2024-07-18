@@ -15,7 +15,6 @@ limiter = Limiter(
 )
 
 # Load the tokenizer
-tokenizer = AutoTokenizer.from_pretrained("informatiker/Llama-3-8B-Instruct-abliterated")
 tokenizer = AutoTokenizer.from_pretrained(os.environ.get('TOKENIZER', 'gpt2'))
 
 api_url = os.environ.get('API_URL', 'https://api.openai.com/v1')
