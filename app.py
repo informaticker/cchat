@@ -20,7 +20,7 @@ tokenizer = AutoTokenizer.from_pretrained(os.environ.get('TOKENIZER', 'gpt2'))
 api_url = os.environ.get('API_URL', 'https://api.openai.com/v1')
 api_key = os.environ.get('API_KEY')
 api_model = os.environ.get('API_MODEL', 'gpt-3.5-turbo')
-temperature = os.environ.get('TEMPERATURE', 0)
+temperature = int(os.environ.get('TEMPERATURE', 0))
 
 @app.route('/v1/tokenizer/count', methods=['POST'])
 def token_count():
