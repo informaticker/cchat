@@ -12,8 +12,8 @@ document.addEventListener("alpine:init", () => {
     home: 0,
     generating: false,
     endpoint: window.location.origin + "/v1",
-    model: "llama3-8b-8192", // This doesn't matter anymore as the backend handles it now
-    stopToken: "<|eot_id|>", // We may need this for some models
+    model: "llama3-groq-70b-8192-tool-use-preview",
+    stopToken: "sfjsdkfjsljflksdkj",
 
     // performance tracking
     time_till_first: 0,
@@ -22,6 +22,9 @@ document.addEventListener("alpine:init", () => {
 
     // New property for error messages
     errorMessage: null,
+
+    // Debug mode
+    debug: false,
 
     removeHistory(cstate) {
       const index = this.histories.findIndex((state) => {
@@ -40,67 +43,65 @@ document.addEventListener("alpine:init", () => {
 
       if (this.generating) return;
       this.generating = true;
-      this.errorMessage = null; // Clear any previous error messages
+      this.errorMessage = null;
       if (this.home === 0) this.home = 1;
 
-      // ensure that going back in history will go back to home
       window.history.pushState({}, "", "/");
 
-      // add message to list
       this.cstate.messages.push({ role: "user", content: value });
 
-      // clear textarea
       el.value = "";
       el.style.height = "auto";
       el.style.height = el.scrollHeight + "px";
 
-      // reset performance tracking
       const prefill_start = Date.now();
       let start_time = 0;
       let tokens = 0;
       this.tokens_per_second = 0;
 
       try {
-        // start receiving server sent events
-        let gottenFirstChunk = false;
         for await (const chunk of this.openaiChatCompletion(
           this.cstate.messages,
         )) {
-          if (!gottenFirstChunk) {
-            this.cstate.messages.push({ role: "assistant", content: "" });
-            gottenFirstChunk = true;
-          }
-
-          // add chunk to the last message
-          this.cstate.messages[this.cstate.messages.length - 1].content +=
-            chunk;
-
-          // calculate performance tracking
-          tokens += 1;
-          this.total_tokens += 1;
-          if (start_time === 0) {
-            start_time = Date.now();
-            this.time_till_first = start_time - prefill_start;
+          if (chunk.role === "function") {
+            // If we receive a function message, add it to the messages only if debug mode is on
+            if (this.debug) {
+              this.cstate.messages.push(chunk);
+            }
           } else {
-            const diff = Date.now() - start_time;
-            if (diff > 0) {
-              this.tokens_per_second = tokens / (diff / 1000);
+            if (
+              !this.cstate.messages[this.cstate.messages.length - 1] ||
+              this.cstate.messages[this.cstate.messages.length - 1].role !==
+                "assistant"
+            ) {
+              this.cstate.messages.push({ role: "assistant", content: "" });
+            }
+            this.cstate.messages[this.cstate.messages.length - 1].content +=
+              chunk;
+
+            tokens += 1;
+            this.total_tokens += 1;
+            if (start_time === 0) {
+              start_time = Date.now();
+              this.time_till_first = start_time - prefill_start;
+            } else {
+              const diff = Date.now() - start_time;
+              if (diff > 0) {
+                this.tokens_per_second = tokens / (diff / 1000);
+              }
             }
           }
         }
 
-        // update the state in histories or add it if it doesn't exist
-        const index = this.histories.findIndex((cstate) => {
-          return cstate.time === this.cstate.time;
-        });
+        const index = this.histories.findIndex(
+          (cstate) => cstate.time === this.cstate.time,
+        );
         this.cstate.time = Date.now();
         if (index !== -1) {
-          // update the time
           this.histories[index] = this.cstate;
         } else {
           this.histories.push(this.cstate);
         }
-        // update in local storage
         localStorage.setItem("histories", JSON.stringify(this.histories));
       } catch (error) {
         console.error("Error in handleSend:", error);
@@ -113,7 +114,6 @@ document.addEventListener("alpine:init", () => {
     },
 
     async handleEnter(event) {
-      // if shift is not pressed
       if (!event.shiftKey) {
         event.preventDefault();
         await this.handleSend();
@@ -124,7 +124,7 @@ document.addEventListener("alpine:init", () => {
       this.errorMessage = message;
       setTimeout(() => {
         this.errorMessage = null;
-      }, 3000); // Hide after 5 seconds
+      }, 3000);
     },
 
     updateTotalTokens(messages) {
@@ -188,8 +188,18 @@ document.addEventListener("alpine:init", () => {
 
               try {
                 const json = JSON.parse(data);
-                if (json.choices && json.choices[0].delta.content) {
-                  yield json.choices[0].delta.content;
+                if (json.choices && json.choices[0].delta) {
+                  const delta = json.choices[0].delta;
+                  if (delta.role === "function") {
+                    // Yield the entire function message
+                    yield {
+                      role: "function",
+                      name: delta.name,
+                      content: delta.content,
+                    };
+                  } else if (delta.content) {
+                    yield delta.content;
+                  }
                 }
               } catch (error) {
                 console.error("Error parsing JSON:", error);

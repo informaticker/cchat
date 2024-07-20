@@ -9,7 +9,7 @@ services:
       - FLASK_APP=app.py
       - TOKENIZER=gpt2
       - API_URL=https://api.openai.com/v1
-      - API_KEY=your_api_key_here
+      - GROQ_API_KEY=your_api_key_here
       - API_MODEL=gpt-3.5-turbo
       - TEMPERATURE=0
       - RATE_LIMIT=20/minute
