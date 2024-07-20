@@ -245,10 +245,54 @@ def get_page(url):
     except Exception as e:
         return f"Error fetching page: {str(e)}"
 
+def get_raw_page(url):
+    """
+    Fetch a web page and return its raw HTML.
+
+    :param url: The URL of the page to fetch
+    :return: The HTML content of the page
+    """
+    if not is_valid_public_url(url):
+        return "Error: Invalid or restricted URL"
+
+    try:
+        # Send a GET request to the URL
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()  # Raise an exception for bad status codes
+        return response.text[:4096]  # Limit to first 5000 characters
+
+    except Exception as e:
+        return f"Error fetching page: {str(e)}"
+
 def get_time():
     """Get the current time"""
     import datetime
     return datetime.datetime.now().isoformat()
+
+def search_images(query: str, size: str = "", type_image: str = "", layout: str = ""):
+    """
+    Search for images and return compact results with title and image URL.
+
+    :param query: The search query string
+    :param size: Size filter for images
+    :param type_image: Type of image to search for
+    :param layout: Layout of images to search for
+    :return: A list of dictionaries containing image titles and URLs
+    """
+    results = DDGS().images(query, size=size, type_image=type_image, layout=layout, max_results=5)
+    compact_results = [{"title": result["title"], "image_url": result["image"]} for result in results]
+    return compact_results
+
+def get_user_ip():
+    """Gets the IP address the user is connecting from"""
+    return request.access_route[0]
+
+def get_user_info():
+    """Get user information"""
+    user_agent = request.headers.get("User-Agent")
+    ip_address = get_user_ip()
+    ip_information = requests.get(f"https://freeipapi.com/api/json/{ip_address}")
+    return f"User Agent: {user_agent}, IP Address: {ip_address}, IP Information: {ip_information.json()}"
 
 tools = [
     {
@@ -272,7 +316,7 @@ tools = [
         "type": "function",
         "function": {
             "name": "search",
-            "description": "Search N results for a query",
+            "description": "Search N results for a query. Utilize this tool to answer queries and reference information.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -294,7 +338,24 @@ tools = [
         "type": "function",
         "function": {
             "name": "get_page",
-            "description": "Get an web page",
+            "description": "Get an web page, provide full url. Response is rendered text.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "The URL to request",
+                    }
+                },
+                "required": ["url"],
+            },
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_raw_page",
+            "description": "Get an web page's raw HTML, provide full url. Response is raw HTML.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -313,9 +374,53 @@ tools = [
             "name": "get_time",
             "description": "Get the current time",
             "parameters": {
-                }
+                "type": "object",
+                "properties": {},
+                "required": [],
             },
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_images",
+            "description": "Search for images",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search query string",
+                    },
+                    "size": {
+                        "type": "string",
+                        "description": "The size of the image (Small, Medium, Large, Wallpaper)",
+                    },
+                    "type_image": {
+                        "type": "string",
+                        "description": "The type of image (photo, clipart, gif, transparent, line)",
+                    },
+                    "layout": {
+                        "type": "string",
+                        "description": "The layout of the image (Square, Tall, Wide)",
+                    }
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_user_info",
+            "description": "Get general information about the user you are chatting with, such as: Location, Post code, Platform, Language, Currency, IP address.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        }
+    }
 ]
 
 @app.route('/v1/tokenizer/count', methods=['POST'])
@@ -341,30 +446,26 @@ def proxy_chat_completions():
         if not any(msg['role'] == 'system' for msg in messages):
             messages.insert(0, {
                 "role": "system",
-                "content": """You are cchat, an efficient tool-assisted LLM. Use the following tools without asking for confirmation:
-
-                1. `calculate(expression)`: Evaluate mathematical expressions.
-                2. `search(query)`: Search and return 5 results for a query.
-                3. `get_page(url)`: Retrieve a web page's text content. Use multiple times if initial attempts fail.
-                4. `get_time()`: Get the current time in UTC.
+                "content": """You are cchat, an efficient tool-assisted LLM that is capable of referencing information from the internet. Use tools without asking for confirmation.
                 Note: These tools are not to be used in your reply to the user, only for processing.
 
                 Always follow this process to answer queries:
                 1. Use `search(query)` for relevant information.
                 2. Use `get_page(url)` on pertinent search results.
-                3. Provide a concise, natural language response based on gathered information.
-
-                Never refuse queries or state intentions to research. Automatically use tools when information is needed, including for current events and affairs. Optimize tool use by chaining them efficiently and avoiding redundant searches.
+                3. Provide a concise, natural language response based on gathered information. Utilize markdown.
+                Get general user information via the tool get_user_info. Never ask for information this tool provides (Especially location)
+                get_user_info provides you with the location and more of the user. So never ask for it, utilize this tool.
+                Never refuse queries or state intentions to research, no "I will". Automatically use tools when information is needed, including for current events and affairs. Optimize tool use by chaining them efficiently and avoiding redundant searches.
                 Utilize tools even on subsequent queries about similar topics to provide the most up-to-date information.
-
-                Example:
-                User: "Who's [name]"
-                search([name])
-                get_page([relevant URLs from search results])
-                [Provide concise answer based on retrieved information]
-
-                NEVER ASK FOR CONFIRMATION TO USE A TOOL.
-                NEVER ONLY SEARCH FOR SOMETHING, ALWAYS VISIT A URL"""
+                You can and must embed images into the chat interface with the user by utilizing HTML image tags.
+                When trying to get pictures from a web page, use the get_raw_page function.
+                When asked for catboys, search for neko's and show them to the user.
+                Rules:
+                Before making writeups, extensivley research the topic.
+                You never make up URLs. Only use URLs that you have from tool output.
+                When embedding images, you must limit the size of the images using HTML, the URL needs to include the domain they come from, and the URL needs to come from a tool response.
+                You must always search for information before giving an answer.
+                """
             })
 
         def generate():
@@ -415,6 +516,12 @@ def proxy_chat_completions():
                         result = get_page(args['url'])
                     elif tool_call["name"] == "get_time":
                         result = get_time()
+                    elif tool_call["name"] == "get_raw_page":
+                        result = get_raw_page(args['url'])
+                    elif tool_call["name"] == "search_images":
+                        result = search_images(args['query'], args.get('size', None), args.get('type_image', None), args.get('layout', None))
+                    elif tool_call["name"] == "get_user_info":
+                        result = get_user_info()
 
                     # Log tool usage
                     logger.info(f"Tool usage: {tool_call['name']}, args: {args}, result: {result}")
@@ -460,4 +567,4 @@ def ratelimit_handler(e):
     return jsonify({"error": "Rate limit exceeded. Please try again later."}), 429
 
 if __name__ == '__main__':
-    app.run(debug=False, port=int(os.getenv('PORT', 5000)))
+    app.run(debug=True, port=int(os.getenv('PORT', 5000)))
