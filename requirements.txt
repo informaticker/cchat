@@ -5,3 +5,4 @@ transformers
 groq
 duckduckgo-search
 requests
+gunicorn
