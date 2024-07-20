@@ -57,9 +57,7 @@
                 ">
                     <template x-for="_state in histories.toSorted((a, b) => b.time - a.time)">
                         <div x-data="{ otx: 0, trigger: 75 }" class="history" @click="
-                        cstate = _state;
-                        updateTotalTokens(cstate.messages);
-                        home = 1;
+                        loadChat(_state);
                         // ensure that going back in history will go back to home
                         window.history.pushState({}, '', '/');
                     " @touchstart="
@@ -76,7 +74,7 @@
                             <p x-text="$truncate(_state.messages[0].content, 80)"></p>
                             <!-- delete button -->
                             <button class="history-delete-button" @click.stop="removeHistory(_state);">
-                                <i class=" fas fa-trash"></i>
+                                <i class="fas fa-trash"></i>
                             </button>
                         </div>
                     </template>
@@ -84,6 +82,8 @@
                 <template x-if="histories.length">
                     <div class="histories-end"></div>
                 </template>
+            </div>
+            </template>
             </div>
         </div>
         <div x-ref="messages" class="messages" x-init="

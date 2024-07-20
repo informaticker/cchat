@@ -34,8 +34,6 @@ limiter = Limiter(
 # Load the tokenizer
 tokenizer = AutoTokenizer.from_pretrained(os.getenv('TOKENIZER', 'gpt2'))
 
-
-
 # API configuration
 API_KEY = os.getenv('API_KEY')
 MODEL = os.getenv('API_MODEL', 'llama3-groq-70b-8192-tool-use-preview')
@@ -242,7 +240,7 @@ def get_page(url):
         # Drop blank lines
         text = '\n'.join(chunk for chunk in chunks if chunk)
 
-        return text[:5000]  # Limit to first 5000 characters
+        return text[:2048]  # Limit to first 5000 characters
 
     except Exception as e:
         return f"Error fetching page: {str(e)}"
@@ -349,6 +347,7 @@ def proxy_chat_completions():
                 2. `search(query)`: Search and return 5 results for a query.
                 3. `get_page(url)`: Retrieve a web page's text content. Use multiple times if initial attempts fail.
                 4. `get_time()`: Get the current time in UTC.
+                Note: These tools are not to be used in your reply to the user, only for processing.
 
                 Always follow this process to answer queries:
                 1. Use `search(query)` for relevant information.
@@ -356,10 +355,11 @@ def proxy_chat_completions():
                 3. Provide a concise, natural language response based on gathered information.
 
                 Never refuse queries or state intentions to research. Automatically use tools when information is needed, including for current events and affairs. Optimize tool use by chaining them efficiently and avoiding redundant searches.
+                Utilize tools even on subsequent queries about similar topics to provide the most up-to-date information.
 
                 Example:
-                User: "How do I use the OpenAI python library"
-                search(OpenAI python library)
+                User: "Who's [name]"
+                search([name])
                 get_page([relevant URLs from search results])
                 [Provide concise answer based on retrieved information]
 

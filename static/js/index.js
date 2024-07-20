@@ -5,6 +5,8 @@ document.addEventListener("alpine:init", () => {
       time: null,
       messages: [],
     },
+    allMessages: [],
+    displayMessages: [],
 
     // historical state
     histories: JSON.parse(localStorage.getItem("histories")) || [],
@@ -36,6 +38,26 @@ document.addEventListener("alpine:init", () => {
       }
     },
 
+    resetChat() {
+      this.cstate = {
+        time: null,
+        messages: [],
+      };
+      this.allMessages = [];
+      this.displayMessages = [];
+      this.total_tokens = 0;
+      this.time_till_first = 0;
+      this.tokens_per_second = 0;
+    },
+
+    loadChat(chatState) {
+      this.cstate = JSON.parse(JSON.stringify(chatState)); // Deep copy
+      this.allMessages = [...this.cstate.messages];
+      this.displayMessages = [...this.cstate.messages];
+      this.home = 1;
+      this.updateTotalTokens(this.allMessages);
+    },
+
     async handleSend() {
       const el = document.getElementById("input-form");
       const value = el.value.trim();
@@ -44,11 +66,20 @@ document.addEventListener("alpine:init", () => {
       if (this.generating) return;
       this.generating = true;
       this.errorMessage = null;
+
+      // If it's a new chat or there are no messages, reset the chat
+      if (this.home === 0 || this.cstate.messages.length === 0) {
+        this.resetChat();
+      }
+
       if (this.home === 0) this.home = 1;
 
       window.history.pushState({}, "", "/");
 
-      this.cstate.messages.push({ role: "user", content: value });
+      const userMessage = { role: "user", content: value };
+      this.cstate.messages.push(userMessage);
+      this.allMessages.push(userMessage);
+      this.displayMessages.push(userMessage);
 
       el.value = "";
       el.style.height = "auto";
@@ -60,24 +91,24 @@ document.addEventListener("alpine:init", () => {
       this.tokens_per_second = 0;
 
       try {
-        for await (const chunk of this.openaiChatCompletion(
-          this.cstate.messages,
-        )) {
+        let currentAssistantMessage = null;
+
+        for await (const chunk of this.openaiChatCompletion(this.allMessages)) {
           if (chunk.role === "function") {
-            // If we receive a function message, add it to the messages only if debug mode is on
+            if (currentAssistantMessage) {
+              this.allMessages.push(currentAssistantMessage);
+              this.displayMessages.push(currentAssistantMessage);
+              currentAssistantMessage = null;
+            }
+            this.allMessages.push(chunk);
             if (this.debug) {
-              this.cstate.messages.push(chunk);
+              this.displayMessages.push(chunk);
             }
           } else {
-            if (
-              !this.cstate.messages[this.cstate.messages.length - 1] ||
-              this.cstate.messages[this.cstate.messages.length - 1].role !==
-                "assistant"
-            ) {
-              this.cstate.messages.push({ role: "assistant", content: "" });
+            if (!currentAssistantMessage) {
+              currentAssistantMessage = { role: "assistant", content: "" };
             }
-            this.cstate.messages[this.cstate.messages.length - 1].content +=
-              chunk;
+            currentAssistantMessage.content += chunk;
 
             tokens += 1;
             this.total_tokens += 1;
@@ -92,6 +123,18 @@ document.addEventListener("alpine:init", () => {
             }
           }
         }
+
+        // Add any pending assistant message
+        if (currentAssistantMessage) {
+          this.allMessages.push(currentAssistantMessage);
+          this.displayMessages.push(currentAssistantMessage);
+        }
+
+        // Update total tokens using all messages
+        this.updateTotalTokens(this.allMessages);
+
+        // Update cstate.messages with displayMessages
+        this.cstate.messages = [...this.displayMessages];
 
         const index = this.histories.findIndex(
           (cstate) => cstate.time === this.cstate.time,
@@ -131,7 +174,7 @@ document.addEventListener("alpine:init", () => {
       fetch(`${window.location.origin}/v1/tokenizer/count`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages }),
+        body: JSON.stringify({ messages: this.allMessages }), // Always use allMessages for token counting
       })
         .then((response) => {
           if (!response.ok) {
